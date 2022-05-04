@@ -765,9 +765,24 @@ class exporter(object):
             "time_cycle",
             "skill",
             "search_mode",
+            "msa_operation_ids",   # Evoqua extra field for the suboperations
+            "msa_parent_id",   # Evoqua extra field for the suboperations
         ]
+        evoqua_suboperations = {}
         for i in recs.read(fields):
             if not i["bom_id"]:
+                # Evoqua extra logic to track the suboperations
+                evoqua_suboperations[i["id"]] = [
+                    i["workcenter_id"][1],
+                    i["time_cycle"],
+                    i["sequence"],
+                    i["name"],
+                    i["skill"][1] if i["skill"] else None,
+                    i["search_mode"],
+                    i["id"],
+                    i["msa_operation_ids"],
+                    i["msa_parent_id"][0] if i["msa_parent_id"] else None,
+                    ]
                 continue
 
             if i["bom_id"][0] in mrp_routing_workcenters:
@@ -790,6 +805,8 @@ class exporter(object):
                             i["skill"][1] if i["skill"] else None,
                             i["search_mode"],
                             i["id"],
+                            i["msa_operation_ids"],
+                            i["msa_parent_id"][0] if i["msa_parent_id"] else None,
                         ]
                     )
             else:
@@ -802,6 +819,8 @@ class exporter(object):
                         i["skill"][1] if i["skill"] else None,
                         i["search_mode"],
                         i["id"],
+                        i["msa_operation_ids"],
+                        i["msa_parent_id"][0] if i["msa_parent_id"] else None,
                     ]
                 ]
 
@@ -1027,7 +1046,22 @@ class exporter(object):
                             j["qty"] = qty
                             fl[j["product_id"][0]] = j
 
-                    steplist = mrp_routing_workcenters[i["id"]]
+                    # Evoqua custom logic to expand the operations into suboperations
+                    # Standard code steplist = mrp_routing_workcenters[i["id"]]
+                    steplist = []
+                    for step in mrp_routing_workcenters[i["id"]]:
+                        if step[7]:
+                            first = True
+                            for sub in step[7]:
+                                if sub in evoqua_suboperations:
+                                    if not first:
+                                        # Only first suboperation needs to consume material
+                                        evoqua_suboperations[sub][8] = None
+                                    steplist.append(evoqua_suboperations[sub])
+                                    first = False
+                        else:
+                            steplist.append(step)
+
                     counter = 0
                     for step in steplist:
                         counter = counter + 1
@@ -1079,7 +1113,8 @@ class exporter(object):
                             )
                         for j in fl.values():
                             if j["qty"] > 0 and (
-                                (j["operation_id"] and j["operation_id"][0] == step[6])
+                                (j["operation_id"] and
+                                (j["operation_id"][0] in (step[6], step[8])))  # Custom evoqua to check parent of suboperation
                                 or (not j["operation_id"] and step == steplist[0])
                             ):
                                 if first_flow:
