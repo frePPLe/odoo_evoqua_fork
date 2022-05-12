@@ -1146,8 +1146,8 @@ class exporter(object):
                     steplist = []
                     for step in mrp_routing_workcenters[i["id"]]:
                         if step[7]:
+                            first = True
                             for _ in range(step[9]):
-                                first = True
                                 for sub in step[7]:
                                     if sub in evoqua_suboperations:
                                         if not first:
