@@ -1211,7 +1211,9 @@ class exporter(object):
                             else "",
                         )
                         first_flow = True
-                        if step == steplist[-1]:
+                        if counter == len(
+                            steplist
+                        ):  # Evoqua: changed check for handle cycles
                             # Add producing flows on the last routing step
                             first_flow = False
                             yield '<flows>\n<flow xsi:type="flow_end" quantity="%f"><item name=%s/></flow>\n' % (
