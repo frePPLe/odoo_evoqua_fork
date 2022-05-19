@@ -881,6 +881,7 @@ class exporter(object):
                 "msa_operation_ids",  # Evoqua extra field for the suboperations
                 "msa_parent_id",  # Evoqua extra field for the suboperations
                 "msa_cycle_nbr",  # Evoqua extra field for the suboperations
+                "msa_limit_group_cycles", # Evoqua extra field for the suboperations
             ],
         ):
             if not i["bom_id"]:
@@ -896,6 +897,8 @@ class exporter(object):
                     i["msa_operation_ids"],
                     i["msa_parent_id"][0] if i["msa_parent_id"] else None,
                     int(i["msa_cycle_nbr"]),
+                    0,
+                    i["msa_limit_group_cycles"],
                 ]
                 continue
 
@@ -922,6 +925,8 @@ class exporter(object):
                             i["msa_operation_ids"],
                             i["msa_parent_id"][0] if i["msa_parent_id"] else None,
                             int(i["msa_cycle_nbr"]),
+                            0,
+                            i["msa_limit_group_cycles"],
                         ]
                     )
             else:
@@ -937,6 +942,8 @@ class exporter(object):
                         i["msa_operation_ids"],
                         i["msa_parent_id"][0] if i["msa_parent_id"] else None,
                         int(i["msa_cycle_nbr"]),
+                        0,
+                        i["msa_limit_group_cycles"],
                     ]
                 ]
 
@@ -1171,13 +1178,16 @@ class exporter(object):
                     for step in mrp_routing_workcenters[i["id"]]:
                         if step[7]:
                             first = True
-                            for _ in range(step[9]):
+                            limit_to_cycles = step[11]
+                            for layer in range(step[9]):
                                 for sub in step[7]:
                                     if sub in evoqua_suboperations:
+                                        new_oper = evoqua_suboperations[sub].copy()
                                         if not first:
                                             # Only first suboperation needs to consume material
-                                            evoqua_suboperations[sub][8] = None
-                                        steplist.append(evoqua_suboperations[sub])
+                                            new_oper[8] = None
+                                        new_oper[10] = layer + 1
+                                        steplist.append(new_oper)
                                         first = False
                         else:
                             steplist.append(step)
@@ -1186,12 +1196,12 @@ class exporter(object):
                     for step in steplist:
                         counter = counter + 1
                         suboperation = step[3]
-                        name = "%s - %s - %s" % (operation, suboperation, counter * 100)
+                        if step[10]:
+                            suffix = " - %s - %s - %s" % (suboperation, step[2], step[10])
+                        else:
+                            suffix = " - %s - %s" % (suboperation, step[2])
+                        name = "%s%s" % (operation, suffix)
                         if len(name) > 300:
-                            suffix = " - %s - %s" % (
-                                suboperation,
-                                counter * 100,
-                            )
                             name = "%s%s" % (
                                 operation[: 300 - len(suffix)],
                                 suffix,
@@ -1357,7 +1367,7 @@ class exporter(object):
                     i["product_uom"][0],
                     self.product_product[i["product_id"][0]]["template"],
                 )
-            elif state == "sale":
+            elif state in ("sale", "order"): # Evoqua customization with extra state
                 qty = i["product_uom_qty"] - i["qty_delivered"]
                 if qty <= 0:
                     status = "closed"
@@ -1389,10 +1399,14 @@ class exporter(object):
                 "revised",
             ):  # Evoqua customization with some custom states
                 status = "canceled"
-                qty = self.convert_qty_uom(
-                    i["product_uom_qty"],
-                    i["product_uom"][0],
-                    self.product_product[i["product_id"][0]]["template"],
+                qty = (
+                    self.convert_qty_uom(
+                        i["product_uom_qty"],
+                        i["product_uom"][0],
+                        self.product_product[i["product_id"][0]]["template"],
+                    )
+                    if i["product_uom"]  # Evoqua: records exist without uom
+                    else i["product_uom_qty"]  # Evoqua: records exist without uom
                 )
             else:
                 logger.warning("Unknown sales order state: %s." % (state,))
@@ -1565,7 +1579,10 @@ class exporter(object):
                 "product_uom_id",
                 "location_dest_id",
                 "product_id",
-            ],
+            ]
+            + ["workorder_ids"]
+            if self.manage_work_orders
+            else [],
         ):
             if i["bom_id"]:
                 # Open orders
@@ -1575,7 +1592,7 @@ class exporter(object):
                     if i["product_id"][0] in self.product_product
                     else None
                 )
-                if not item:
+                if not item or not location:
                     continue
                 operation = u"%s @ %s %d" % (
                     item["name"],
@@ -1586,10 +1603,9 @@ class exporter(object):
                     startdate = self.formatDateTime(
                         i["date_start"] if i["date_start"] else i["date_planned_start"]
                     )
-
                 except Exception:
                     continue
-                if not location or operation not in self.operations:
+                if operation not in self.operations:
                     continue
                 factor = (
                     self.bom_producedQty[(operation, item["name"])]
@@ -1608,10 +1624,56 @@ class exporter(object):
                     quoteattr(i["name"]),
                     startdate,
                     qty,
-                    # "approved",  # In the "approved" status, frepple can still reschedule the MO in function of material and capacity
-                    "confirmed",  # In the "confirmed" status, frepple sees the MO as frozen and unchangeable
+                    # In the "approved" status, frepple can still reschedule the MO in function of material and capacity
+                    # In the "confirmed" status, frepple sees the MO as frozen and unchangeable
+                    "confirmed"
+                    if not self.manage_work_orders and i["state"] == "progress"
+                    else "approved",
                     quoteattr(operation),
                 )
+                if self.manage_work_orders and i["workorder_ids"]:
+                    for wo in self.generator.getData(
+                        "mrp.workorder",
+                        ids=i["workorder_ids"],
+                        fields=[
+                            "display_name",
+                            "name",
+                            "qty_produced",
+                            "product_uom_id",
+                            "state",
+                            "msa_sequence",  # Evoqua custom field
+                            "msa_sub_sequence",  # Evoqua custom field
+                        ],
+                    ):
+                        name = "%s - %s - %s" % (operation, wo["msa_sequence"], wo["msa_sub_sequence"])
+                        if len(name) > 300:
+                            suffix = " - %s - %s" % (
+                                wo["msa_sequence"],
+                                wo["msa_sub_sequence"],
+                            )
+                            name = "%s%s" % (
+                                operation[: 300 - len(suffix)],
+                                suffix,
+                            )
+                        qty_produced = (
+                            self.convert_qty_uom(
+                                wo["qty_produced"],
+                                wo["product_uom_id"][0],
+                                self.product_product[i["product_id"][0]]["template"],
+                            )
+                            / factor
+                        )
+                        yield '<operationplan type="MO" reference=%s start="%s" quantity="%s" quantity_completed="%s" status="%s"><operation name=%s/><owner reference=%s/></operationplan>\n' % (
+                            quoteattr("%s - %s - %s" % (i["name"], wo["msa_sequence"], wo["msa_sub_sequence"])),
+                            startdate,
+                            qty,
+                            qty_produced,
+                            # In the "approved" status, frepple can still reschedule the MO in function of material and capacity
+                            # In the "confirmed" status, frepple sees the MO as frozen and unchangeable
+                            "confirmed" if wo["state"] == "progress" else "approved",
+                            quoteattr(name),
+                            quoteattr(i["name"]),
+                        )
         yield "</operationplans>\n"
 
     def export_orderpoints(self):
