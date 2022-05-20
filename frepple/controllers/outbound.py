@@ -351,11 +351,11 @@ class exporter(object):
             )
             return qty * self.uom[uom_id]["factor"]
 
-    def convert_float_time(self, float_time):
+    def convert_float_time(self, float_time, units='days'):
         """
         Convert Odoo float time to ISO 8601 duration.
         """
-        d = timedelta(days=float_time)
+        d = timedelta(**{units: float_time})
         return "P%dDT%dH%dM%dS" % (
             d.days,  # duration: days
             int(d.seconds / 3600),  # duration: hours
@@ -875,31 +875,25 @@ class exporter(object):
                 "bom_id",
                 "workcenter_id",
                 "sequence",
-                "time_cycle",
+                # "time_cycle",  # Not needed for evoqua
                 "skill",
                 "search_mode",
                 "msa_operation_ids",  # Evoqua extra field for the suboperations
                 "msa_parent_id",  # Evoqua extra field for the suboperations
                 "msa_cycle_nbr",  # Evoqua extra field for the suboperations
                 "msa_limit_group_cycles", # Evoqua extra field for the suboperations
+                "msa_capacity_per_cycle", # Evoqua extra field for duration
+                "msa_resources_per_cycle",  # Evoqua extra field for duration
+                "msa_time_cycle", # Evoqua extra field for duration
+                "msa_time_start",  # Evoqua extra field for duration
+                "msa_time_stop",  # Evoqua extra field for duration
+                "msa_time_cycle_waiting",  # Evoqua extra field for duration
+                "msa_time_waiting" # Evoqua extra field for duration
             ],
         ):
             if not i["bom_id"]:
                 # Evoqua extra logic to track the suboperations
-                evoqua_suboperations[i["id"]] = [
-                    i["workcenter_id"][1],
-                    i["time_cycle"],
-                    i["sequence"],
-                    i["name"],
-                    i["skill"][1] if i["skill"] else None,
-                    i["search_mode"],
-                    i["id"],
-                    i["msa_operation_ids"],
-                    i["msa_parent_id"][0] if i["msa_parent_id"] else None,
-                    int(i["msa_cycle_nbr"]),
-                    0,
-                    i["msa_limit_group_cycles"],
-                ]
+                evoqua_suboperations[i["id"]] = i
                 continue
 
             if i["bom_id"][0] in mrp_routing_workcenters:
@@ -908,46 +902,17 @@ class exporter(object):
                 exists = False
                 if not self.manage_work_orders:
                     for r in mrp_routing_workcenters[i["bom_id"][0]]:
-                        if r[0] == i["workcenter_id"][1]:
-                            r[1] += i["time_cycle"]
+                        if r["workcenter_id"][1] == i["workcenter_id"][1]:
+                            r["time_cycle"] += i["time_cycle"]
                             exists = True
                             break
                 if not exists:
-                    mrp_routing_workcenters[i["bom_id"][0]].append(
-                        [
-                            i["workcenter_id"][1],
-                            i["time_cycle"],
-                            i["sequence"],
-                            i["name"],
-                            i["skill"][1] if i["skill"] else None,
-                            i["search_mode"],
-                            i["id"],
-                            i["msa_operation_ids"],
-                            i["msa_parent_id"][0] if i["msa_parent_id"] else None,
-                            int(i["msa_cycle_nbr"]),
-                            0,
-                            i["msa_limit_group_cycles"],
-                        ]
-                    )
+                    mrp_routing_workcenters[i["bom_id"][0]].append(i)
             else:
-                mrp_routing_workcenters[i["bom_id"][0]] = [
-                    [
-                        i["workcenter_id"][1],
-                        i["time_cycle"],
-                        i["sequence"],
-                        i["name"],
-                        i["skill"][1] if i["skill"] else None,
-                        i["search_mode"],
-                        i["id"],
-                        i["msa_operation_ids"],
-                        i["msa_parent_id"][0] if i["msa_parent_id"] else None,
-                        int(i["msa_cycle_nbr"]),
-                        0,
-                        i["msa_limit_group_cycles"],
-                    ]
-                ]
+                mrp_routing_workcenters[i["bom_id"][0]] = [i]
 
         # Loop over all bom records
+        self.suboperations = {}
         for i in self.generator.getData(
             "mrp.bom",
             fields=[
@@ -1123,10 +1088,10 @@ class exporter(object):
                                 exists = True
                                 yield "<loads>\n"
                             yield '<load quantity="%f" search=%s><resource name=%s/>%s</load>\n' % (
-                                j[1],
-                                quoteattr(j[5]),
-                                quoteattr(j[0]),
-                                ("<skill name=%s/>" % quoteattr(j[4])) if j[4] else "",
+                                j["time_cycle"],
+                                quoteattr(j["search_mode"]),
+                                quoteattr(j["workcenter_id"][1]),
+                                ("<skill name=%s/>" % quoteattr(j["skill"][1])) if j["skill"] else "",
                             )
                         if exists:
                             yield "</loads>\n"
@@ -1143,6 +1108,7 @@ class exporter(object):
                     )
 
                     yield "<suboperations>"
+                    self.suboperations[operation] = []
 
                     fl = {}
                     for j in self.generator.getData(
@@ -1176,17 +1142,19 @@ class exporter(object):
                     # Standard code steplist = mrp_routing_workcenters[i["id"]]
                     steplist = []
                     for step in mrp_routing_workcenters[i["id"]]:
-                        if step[7]:
+                        if step["msa_operation_ids"]:
                             first = True
-                            limit_to_cycles = step[11]
-                            for layer in range(step[9]):
-                                for sub in step[7]:
+                            for layer in range(int(step["msa_cycle_nbr"])):
+                                for sub in step["msa_operation_ids"]:
                                     if sub in evoqua_suboperations:
+                                        if evoqua_suboperations[sub]["msa_limit_group_cycles"] and str(layer + 1) not in evoqua_suboperations[sub]["msa_limit_group_cycles"].split(","):
+                                            # This suboperation is not needed in this cycle
+                                            continue
                                         new_oper = evoqua_suboperations[sub].copy()
                                         if not first:
                                             # Only first suboperation needs to consume material
-                                            new_oper[8] = None
-                                        new_oper[10] = layer + 1
+                                            new_oper["consume_material"] = False
+                                        new_oper["layer"] = layer + 1
                                         steplist.append(new_oper)
                                         first = False
                         else:
@@ -1195,35 +1163,40 @@ class exporter(object):
                     counter = 0
                     for step in steplist:
                         counter = counter + 1
-                        suboperation = step[3]
-                        if step[10]:
-                            suffix = " - %s - %s - %s" % (suboperation, step[2], step[10])
-                        else:
-                            suffix = " - %s - %s" % (suboperation, step[2])
+                        suboperation = step["name"]
+                        suffix = " - %s - %s" % (suboperation, counter)
                         name = "%s%s" % (operation, suffix)
                         if len(name) > 300:
                             name = "%s%s" % (
                                 operation[: 300 - len(suffix)],
                                 suffix,
                             )
-                        yield "<suboperation>" '<operation name=%s priority="%s" duration_per="%s" xsi:type="operation_time_per">\n' "<location name=%s/>\n" '<loads><load quantity="%f" search=%s><resource name=%s/>%s</load></loads>\n' % (
+                        self.suboperations[operation].append(name)
+
+                        # Evoqua formulas for the duration
+                        duration = max(step["msa_time_start"] + step["msa_time_stop"], 0)
+                        duration_per = max(step["msa_time_cycle_waiting"] + step["msa_time_cycle"], 0)
+                        batch = max(step["msa_capacity_per_cycle"] * step["msa_resources_per_cycle"], 0)
+                        if batch > 0:
+                            duration_per /= batch
+                        posttime = max(step["msa_time_waiting"], 0)
+
+                        yield "<suboperation>" '<operation name=%s priority="%s" posttime="%s" duration="%s" duration_per="%s" xsi:type="operation_time_per">\n' "<location name=%s/>\n" '<loads><load quantity="%f" search=%s><resource name=%s/>%s</load></loads>\n' % (
                             quoteattr(name),
                             counter * 10,
-                            self.convert_float_time(step[1] / 1440.0)
-                            if step[1] and step[1] > 0
-                            else "P0D",
+                            self.convert_float_time(posttime, "seconds"),
+                            self.convert_float_time(duration, "seconds"),
+                            self.convert_float_time(duration_per, "seconds"),
                             quoteattr(location),
                             1,
-                            quoteattr(step[5]),
-                            quoteattr(step[0]),
-                            ("<skill name=%s/>" % quoteattr(step[4]))
-                            if step[4]
+                            quoteattr(step["search_mode"]),
+                            quoteattr(step["workcenter_id"][1]),
+                            ("<skill name=%s/>" % quoteattr(step["skill"][1]))
+                            if step["skill"]
                             else "",
                         )
                         first_flow = True
-                        if counter == len(
-                            steplist
-                        ):  # Evoqua: changed check for handle cycles
+                        if counter == len(steplist):
                             # Add producing flows on the last routing step
                             first_flow = False
                             yield '<flows>\n<flow xsi:type="flow_end" quantity="%f"><item name=%s/></flow>\n' % (
@@ -1234,8 +1207,7 @@ class exporter(object):
                             )
                             self.bom_producedQty[
                                 (
-                                    "%s - %s - %s"
-                                    % (operation, suboperation, (counter * 100)),
+                                    name,
                                     product_buf["name"],
                                 )
                             ] = (
@@ -1247,9 +1219,11 @@ class exporter(object):
                             if j["qty"] > 0 and (
                                 (
                                     j["operation_id"]
-                                    and (j["operation_id"][0] in (step[6], step[8]))
+                                    and step.get("consume_material", True)
+                                    and (j["operation_id"][0] == step["id"]
+                                      or (step["msa_parent_id"] and j["operation_id"][0] == step["msa_parent_id"][0]))
                                 )  # Custom evoqua to check parent of suboperation
-                                or (not j["operation_id"] and step == steplist[0])
+                                or (not j["operation_id"] and counter == 0)
                             ):
                                 if first_flow:
                                     first_flow = False
@@ -1620,9 +1594,9 @@ class exporter(object):
                     )
                     / factor
                 )
-                yield '<operationplan type="MO" reference=%s start="%s" quantity="%s" status="%s"><operation name=%s/></operationplan>\n' % (
-                    quoteattr(i["name"]),
-                    startdate,
+                yield '<operationplan type="MO" reference=%s%s quantity="%s" status="%s"><operation name=%s/></operationplan>\n' % (
+                    quoteattr("%s - %s" % (i["name"], i["id"])),
+                    (' start="%s"' % startdate) if not self.manage_work_orders or not i["workorder_ids"] else "",
                     qty,
                     # In the "approved" status, frepple can still reschedule the MO in function of material and capacity
                     # In the "confirmed" status, frepple sees the MO as frozen and unchangeable
@@ -1632,6 +1606,7 @@ class exporter(object):
                     quoteattr(operation),
                 )
                 if self.manage_work_orders and i["workorder_ids"]:
+                    wo_counter = 1
                     for wo in self.generator.getData(
                         "mrp.workorder",
                         ids=i["workorder_ids"],
@@ -1643,37 +1618,90 @@ class exporter(object):
                             "state",
                             "msa_sequence",  # Evoqua custom field
                             "msa_sub_sequence",  # Evoqua custom field
+                            "msa_sub_workorder_ids", # Evoqua custom field
                         ],
                     ):
-                        name = "%s - %s - %s" % (operation, wo["msa_sequence"], wo["msa_sub_sequence"])
-                        if len(name) > 300:
-                            suffix = " - %s - %s" % (
-                                wo["msa_sequence"],
-                                wo["msa_sub_sequence"],
+                        if wo["msa_sub_workorder_ids"]:
+                            # Has sub-workorders
+                            for subwo in self.generator.getData(
+                                "mrp.workorder",
+                                ids=wo["msa_sub_workorder_ids"],
+                                fields=[
+                                    "display_name",
+                                    "name",
+                                    "qty_produced",
+                                    "product_uom_id",
+                                    "state",
+                                    "date_start",
+                                    "date_planned_start",
+                                    "msa_sequence",  # Evoqua custom field
+                                    "msa_sub_sequence",  # Evoqua custom field
+                                ],
+                            ):
+                                try:
+                                    name = self.suboperations[operation][wo_counter-1]
+                                except Exception:
+                                    logger.error("Manufacturing order %s has more workorders than expected" % i["name"])
+                                    continue
+                                try:
+                                    startdate = ' start="%s"' % self.formatDateTime(
+                                        subwo["date_start"] if subwo["date_start"] else subwo["date_planned_start"]
+                                    )
+                                except Exception:
+                                    startdate = ""
+                                qty_produced = (
+                                    self.convert_qty_uom(
+                                        subwo["qty_produced"],
+                                        subwo["product_uom_id"][0],
+                                        self.product_product[i["product_id"][0]]["template"],
+                                    )
+                                    / factor
+                                )
+                                yield '<operationplan type="MO" reference=%s%s quantity="%s" quantity_completed="%s" status="%s"><operation name=%s/><owner reference=%s/></operationplan>\n' % (
+                                    quoteattr("%s - %03d - %s" % (i["name"], wo_counter, subwo["id"])),
+                                    startdate,
+                                    qty,
+                                    qty_produced,
+                                    # In the "approved" status, frepple can still reschedule the MO in function of material and capacity
+                                    # In the "confirmed" status, frepple sees the MO as frozen and unchangeable
+                                    "confirmed" if subwo["state"] == "progress" else "approved",
+                                    quoteattr(name),
+                                    quoteattr("%s - %s" % (i["name"], i["id"])),
+                                )
+                                wo_counter += 1
+                        else:
+                            # No sub-workorders
+                            try:
+                                name = self.suboperations[operation][wo_counter-1]
+                            except Exception:
+                                logger.error("Manufacturing order %s has more workorders than expected" % i["name"])
+                                continue
+                            try:
+                                startdate = ' start="%s"' % self.formatDateTime(
+                                    subwo["date_start"] if wo["date_start"] else wo["date_planned_start"]
+                                )
+                            except Exception:
+                                startdate = ""
+                            qty_produced = (
+                                self.convert_qty_uom(
+                                    wo["qty_produced"],
+                                    wo["product_uom_id"][0],
+                                    self.product_product[i["product_id"][0]]["template"],
+                                )
+                                / factor
                             )
-                            name = "%s%s" % (
-                                operation[: 300 - len(suffix)],
-                                suffix,
+                            yield '<operationplan type="MO" reference=%s%s quantity="%s" quantity_completed="%s" status="%s"><operation name=%s/><owner reference=%s/></operationplan>\n' % (
+                                quoteattr("%s - %03d - %s" % (i["name"], wo_counter, wo["id"])),
+                                startdate,
+                                qty,
+                                qty_produced,
+                                # In the "approved" status, frepple can still reschedule the MO in function of material and capacity
+                                # In the "confirmed" status, frepple sees the MO as frozen and unchangeable
+                                "confirmed" if wo["state"] == "progress" else "approved",
+                                quoteattr(name),
+                                quoteattr("%s - %s" % (i["name"], i["id"])),
                             )
-                        qty_produced = (
-                            self.convert_qty_uom(
-                                wo["qty_produced"],
-                                wo["product_uom_id"][0],
-                                self.product_product[i["product_id"][0]]["template"],
-                            )
-                            / factor
-                        )
-                        yield '<operationplan type="MO" reference=%s start="%s" quantity="%s" quantity_completed="%s" status="%s"><operation name=%s/><owner reference=%s/></operationplan>\n' % (
-                            quoteattr("%s - %s - %s" % (i["name"], wo["msa_sequence"], wo["msa_sub_sequence"])),
-                            startdate,
-                            qty,
-                            qty_produced,
-                            # In the "approved" status, frepple can still reschedule the MO in function of material and capacity
-                            # In the "confirmed" status, frepple sees the MO as frozen and unchangeable
-                            "confirmed" if wo["state"] == "progress" else "approved",
-                            quoteattr(name),
-                            quoteattr(i["name"]),
-                        )
+                            wo_counter += 1
         yield "</operationplans>\n"
 
     def export_orderpoints(self):
