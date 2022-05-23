@@ -1164,7 +1164,7 @@ class exporter(object):
                     for step in steplist:
                         counter = counter + 1
                         suboperation = step["name"]
-                        suffix = " - %s - %s" % (suboperation, counter)
+                        suffix = " - %s - %03d" % (suboperation, counter)
                         name = "%s%s" % (operation, suffix)
                         if len(name) > 300:
                             name = "%s%s" % (
@@ -1223,7 +1223,7 @@ class exporter(object):
                                     and (j["operation_id"][0] == step["id"]
                                       or (step["msa_parent_id"] and j["operation_id"][0] == step["msa_parent_id"][0]))
                                 )  # Custom evoqua to check parent of suboperation
-                                or (not j["operation_id"] and counter == 0)
+                                or (not j["operation_id"] and counter == 1)
                             ):
                                 if first_flow:
                                     first_flow = False
