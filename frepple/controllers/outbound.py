@@ -615,6 +615,8 @@ class exporter(object):
             "mrp.workcenter.skill",
             fields=["workcenter", "skill", "priority"],
         ):
+            if not i["workcenter"] or i["workcenter"][0] not in self.map_workcenters:
+                continue
             if first:
                 yield "<!-- resourceskills -->\n"
                 yield "<skills>\n"
@@ -623,7 +625,7 @@ class exporter(object):
             yield "<resourceskills>"
             yield '<resourceskill priority="%d"><resource name=%s/></resourceskill>' % (
                 i["priority"],
-                quoteattr(i["workcenter"][1]),
+                quoteattr(self.map_workcenters[i["workcenter"][0]]),
             )
             yield "</resourceskills>"
             yield "</skill>"
@@ -662,6 +664,9 @@ class exporter(object):
                 yield "<resources>\n"
                 first = False
             name = i["name"]
+            if name in ["Stoken", "Vlakken in de oven", "Gloeien", "Richten in de oven"]:
+                # Evoqua: map these workcenters as a single one in frepple
+                name = "oven"
             owner = i["owner"]
             available = i["resource_calendar_id"]
             self.map_workcenters[i["id"]] = name
@@ -1084,14 +1089,21 @@ class exporter(object):
                     if i["id"] and not subcontractor:
                         exists = False
                         for j in mrp_routing_workcenters.get(i["id"], []):
+                            if (
+                                not j["workcenter_id"]
+                                or j["workcenter_id"][0] not in self.map_workcenters
+                            ):
+                                continue
                             if not exists:
                                 exists = True
                                 yield "<loads>\n"
                             yield '<load quantity="%f" search=%s><resource name=%s/>%s</load>\n' % (
                                 j["time_cycle"],
                                 quoteattr(j["search_mode"]),
-                                quoteattr(j["workcenter_id"][1]),
-                                ("<skill name=%s/>" % quoteattr(j["skill"][1])) if j["skill"] else "",
+                                quoteattr(self.map_workcenters[j["workcenter_id"][0]]),
+                                ("<skill name=%s/>" % quoteattr(j["skill"][1]))
+                                if j["skill"]
+                                else "",
                             )
                         if exists:
                             yield "</loads>\n"
@@ -1175,12 +1187,14 @@ class exporter(object):
 
                         # Evoqua formulas for the duration
                         duration = max(step["msa_time_start"] + step["msa_time_stop"], 0)
-                        duration_per = max(step["msa_time_cycle_waiting"] + step["msa_time_cycle"], 0)
+                        duration_per = max(step["msa_time_cycle"], 0)
                         batch = max(step["msa_capacity_per_cycle"] * step["msa_resources_per_cycle"], 0)
                         if batch > 0:
                             duration_per /= batch
-                        posttime = max(step["msa_time_waiting"], 0)
+                        posttime = max(step["msa_time_cycle_waiting"] + step["msa_time_waiting"], 0)
 
+                        if not step["workcenter_id"] or step["workcenter_id"][0] not in self.map_workcenters:
+                            continue
                         yield "<suboperation>" '<operation name=%s priority="%s" posttime="%s" duration="%s" duration_per="%s" xsi:type="operation_time_per">\n' "<location name=%s/>\n" '<loads><load quantity="%f" search=%s><resource name=%s/>%s</load></loads>\n' % (
                             quoteattr(name),
                             counter * 10,
@@ -1190,7 +1204,7 @@ class exporter(object):
                             quoteattr(location),
                             1,
                             quoteattr(step["search_mode"]),
-                            quoteattr(step["workcenter_id"][1]),
+                            quoteattr(self.map_workcenters[step["workcenter_id"][0]]),
                             ("<skill name=%s/>" % quoteattr(step["skill"][1]))
                             if step["skill"]
                             else "",
