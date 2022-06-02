@@ -41,7 +41,7 @@ class OverviewDemandProgressReport(GridPivot):
                 .filter(owner=OuterRef("reference"))
                 .filter(
                     Exists(
-                        OperationResource.objects.filter(resource__name="oven").filter(
+                        OperationResource.objects.filter(resource__name__in=["oven","Painting & Oven per sqm 涂层 & 电炉每平方米面积"]).filter(
                             operation__name=OuterRef("operation")
                         )
                     )
@@ -143,7 +143,7 @@ class OverviewDemandProgressReport(GridPivot):
                        where bucket_id = %%s and enddate > %%s and startdate < %%s) d
             inner join operationplan workorder on operationplan.reference = workorder.owner_id
 			inner join operationresource on workorder.operation_id = operationresource.operation_id
-										and operationresource.resource_id in ('oven', '	Painting & Oven per sqm 涂层 & 电炉每平方米面')
+										and operationresource.resource_id in ('oven', 'Painting & Oven per sqm 涂层 & 电炉每平方米面积')
 										and workorder.status not in ('closed', 'completed', 'canceled')
             group by
             operationplan.reference,
