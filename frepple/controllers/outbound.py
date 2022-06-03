@@ -351,7 +351,7 @@ class exporter(object):
             )
             return qty * self.uom[uom_id]["factor"]
 
-    def convert_float_time(self, float_time, units='days'):
+    def convert_float_time(self, float_time, units="days"):
         """
         Convert Odoo float time to ISO 8601 duration.
         """
@@ -1479,9 +1479,9 @@ class exporter(object):
                     "not in",
                     # Comment out on of the following alternative approaches:
                     # Alternative I: don't send RFQs to frepple because that supply isn't certain to be available yet.
-                    ("draft", "sent", "bid", "confirmed", "cancel"),
+                    # ("draft", "sent", "bid", "confirmed", "cancel"),
                     # Alternative II: send RFQs to frepple to avoid that the same purchasing proposal is generated again by frepple.
-                    # ("bid", "confirmed", "cancel"),
+                    ("bid", "purchase", "cancel"),
                 ),
                 ("order_id.state", "=", False),
             ],
@@ -1498,17 +1498,34 @@ class exporter(object):
         )
 
         # Get all purchase orders
-        po = {
-            i["id"]: i
-            for i in self.generator.getData(
-                "purchase.order",
-                ids=[j["order_id"][0] for j in po_line],
-                fields=["name", "company_id", "partner_id", "state", "date_order"],
-            )
-        }
+        po = {}
+        receipt_ids = set()
+        for i in self.generator.getData(
+            "purchase.order",
+            search=[
+                "|",
+                (
+                    "state",
+                    "in",
+                    ("draft", "sent", "bid", "to approve", "purchase"),
+                ),
+                ("state", "=", False),
+            ],
+            fields=[
+                "name",
+                "company_id",
+                "partner_id",
+                "state",
+                "date_order",
+                "picking_ids",
+            ],
+        ):
+            po[i["id"]] = i
+            if i["state"] == "purchase":
+                receipt_ids.update(i["picking_ids"])
 
-        # Create purchasing operations
-        yield "<!-- open purchase orders -->\n"
+        # Create purchasing operations from PO lines
+        yield "<!-- open purchase orders from PO lines -->\n"
         yield "<operationplans>\n"
         for i in po_line:
             if not i["product_id"] or i["state"] == "cancel":
@@ -1538,6 +1555,72 @@ class exporter(object):
                 )
                 yield "</operationplan>\n"
         yield "</operationplans>\n"
+
+        # Create purchasing operations from receipts
+        if receipt_ids:
+            stock_move_line_ids = []
+            receipts = {}
+            for i in self.generator.getData(
+                "stock.picking",
+                ids=receipt_ids,
+                fields=[
+                    "move_line_ids_without_package",
+                    "purchase_id",
+                    "scheduled_date",
+                ],
+            ):
+                stock_move_line_ids.extend(i["move_line_ids_without_package"])
+                receipts[i["id"]] = i
+            logger.error("receiptids %s " % receipt_ids)
+            logger.error("stock_move_line_ids %s " % stock_move_line_ids)
+            yield "<!-- open purchase orders from PO receipts-->\n"
+            yield "<operationplans>\n"
+            for i in self.generator.getData(
+                "stock.move.line",
+                ids=stock_move_line_ids,
+                fields=[
+                    "product_id",
+                    "product_qty",
+                    "qty_done",
+                    "reference",
+                    "product_uom_id",
+                    "location_dest_id",
+                    "origin",
+                    "picking_id",
+                    "date",
+                ],
+            ):
+                if not i["product_id"]:
+                    continue
+                item = self.product_product.get(i["product_id"][0], None)
+                j = po[receipts[i["picking_id"][0]]["purchase_id"][0]]
+                # if PO status is done, we should ignore this receipt
+                if j["state"] == "done":
+                    continue
+                location = self.map_locations.get(i["location_dest_id"][0], None)
+                if location and item and i["qty_done"] < i["product_qty"]:
+                    start = self.formatDateTime(j["date_order"])
+                    end = self.formatDateTime(
+                        receipts[i["picking_id"][0]]["scheduled_date"]
+                    )
+                    qty = self.convert_qty_uom(
+                        i["product_qty"] - i["qty_done"],
+                        i["product_uom_id"][0],
+                        self.product_product[i["product_id"][0]]["template"],
+                    )
+                    yield '<operationplan reference=%s ordertype="PO" start="%s" end="%s" quantity="%f" status="confirmed">' "<item name=%s/><location name=%s/><supplier name=%s/>" % (
+                        quoteattr(
+                            "%s - %s - %s" % (j["name"], i["picking_id"][1], i["id"])
+                        ),
+                        start,
+                        end,
+                        qty,
+                        quoteattr(item["name"]),
+                        quoteattr(location),
+                        quoteattr("%d %s" % (j["partner_id"][0], j["partner_id"][1])),
+                    )
+                    yield "</operationplan>\n"
+            yield "</operationplans>\n"
 
     def export_manufacturingorders(self):
         """
