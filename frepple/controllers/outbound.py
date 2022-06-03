@@ -1571,8 +1571,6 @@ class exporter(object):
             ):
                 stock_move_line_ids.extend(i["move_line_ids_without_package"])
                 receipts[i["id"]] = i
-            logger.error("receiptids %s " % receipt_ids)
-            logger.error("stock_move_line_ids %s " % stock_move_line_ids)
             yield "<!-- open purchase orders from PO receipts-->\n"
             yield "<operationplans>\n"
             for i in self.generator.getData(
