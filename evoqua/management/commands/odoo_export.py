@@ -128,7 +128,7 @@ class Command(StdCommand):
         #         int(i.criticality),
         #         quoteattr(i.batch or ""),
         #     )
-#
+
         # # Manufacturing orders to export
         # for i in (
         #     ManufacturingOrder.objects.using(self.database)

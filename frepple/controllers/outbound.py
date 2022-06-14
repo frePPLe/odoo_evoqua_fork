@@ -676,12 +676,12 @@ class exporter(object):
             owner = i["owner"]
             available = i["resource_calendar_id"]
             self.map_workcenters[i["id"]] = name
-            yield '<resource name=%s type="%s" maximum="%s" efficiency="%s"><location name=%s/>%s%s</resource>\n' % (
+            yield '<resource name=%s%s maximum="%s" efficiency="%s"><location name=%s/>%s%s</resource>\n' % (
                 quoteattr(name),
-                "buckets_day"  # Evoqua customization to set resource type
+                ' xsi:type="resource_buckets"'  # Evoqua customization to set resource type
                 if i["msa_costing_type"] == "machine"
                 or name == "Painting & Oven per sqm 涂层 & 电炉每平方米面积"  # TEMPORARY HARDCODE
-                else "default",
+                else "",
                 i["capacity"],
                 100,  # i["time_efficiency"],    TEMPORARY WORKAROUND FOR ODOO TEST DATA ISSUE
                 quoteattr(self.mfg_location),
@@ -1209,7 +1209,7 @@ class exporter(object):
                         duration = max(
                             step["msa_time_start"] + step["msa_time_stop"], 0
                         )
-                        duration_per = max(step["msa_time_cycle"], 0)
+                        duration_per = max(step["msa_time_cycle"], 0) * step["msa_cycle_nbr"]
                         batch = max(
                             step["msa_capacity_per_cycle"]
                             * step["msa_resources_per_cycle"],
