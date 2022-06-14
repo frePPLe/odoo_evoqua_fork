@@ -657,6 +657,7 @@ class exporter(object):
                 "resource_calendar_id",
                 "time_efficiency",
                 "capacity",
+                "msa_costing_type",
             ],
         ):
             if first:
@@ -675,10 +676,14 @@ class exporter(object):
             owner = i["owner"]
             available = i["resource_calendar_id"]
             self.map_workcenters[i["id"]] = name
-            yield '<resource name=%s maximum="%s" efficiency="%s"><location name=%s/>%s%s</resource>\n' % (
+            yield '<resource name=%s type="%s" maximum="%s" efficiency="%s"><location name=%s/>%s%s</resource>\n' % (
                 quoteattr(name),
+                "buckets_day"  # Evoqua customization to set resource type
+                if i["msa_costing_type"] == "machine"
+                or name == "Painting & Oven per sqm 涂层 & 电炉每平方米面积"  # TEMPORARY HARDCODE
+                else "default",
                 i["capacity"],
-                100, # i["time_efficiency"],    TEMPORARY WORKAROUND FOR ODOO TEST DATA ISSUE
+                100,  # i["time_efficiency"],    TEMPORARY WORKAROUND FOR ODOO TEST DATA ISSUE
                 quoteattr(self.mfg_location),
                 ("<owner name=%s/>" % quoteattr(owner[1])) if owner else "",
                 ("<available name=%s/>" % quoteattr(available[1])) if available else "",
@@ -1228,7 +1233,9 @@ class exporter(object):
                             self.convert_float_time(duration, "seconds"),
                             self.convert_float_time(duration_per, "seconds"),
                             quoteattr(location),
-                            1,
+                            step[
+                                "msa_cycle_nbr"
+                            ],  # Evoqua custom load quantity for bucketized resources
                             quoteattr(step["search_mode"]),
                             quoteattr(self.map_workcenters[step["workcenter_id"][0]]),
                             ("<skill name=%s/>" % quoteattr(step["skill"][1]))
