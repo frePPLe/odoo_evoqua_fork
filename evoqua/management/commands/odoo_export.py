@@ -200,8 +200,7 @@ class Command(StdCommand):
                 owner__operation__type="routing",
                 operation__source__startswith="odoo",
                 owner__item__source__startswith="odoo",
-                status__in=("proposed", "approved"),
-                startdate__lte=today + timedelta(days=7),
+                status__in="approved",
             )
             .order_by("startdate")
             .select_related("operation", "location", "item", "owner")
