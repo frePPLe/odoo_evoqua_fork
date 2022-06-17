@@ -160,24 +160,36 @@ class importer(object):
                         if elem.get("owner") in mo_references:
                             # Newly created MO
                             mo = mo_references[elem.get("owner")]
+                            wo_idx = int(elem.get("operation").rsplit(" - ",1)[1]) - 1
+                            wo_count = 0
+                            wo = None
+                            for w in mfg_workorder.browse(mo.workorder_ids):
+                                if w.msa_sub_workorder_ids:
+                                    for subw in mfg_workorder.browse(w.msa_sub_workorder_ids):
+                                        if count == wo_idx:
+                                            wo = w
+                                            break
+                                        wo_idx += 1
+                                else:
+                                    if count == wo_idx:
+                                        wo = w
+                                    wo_idx += 1
+                                if wo:
+                                    break
                         else:
                             # Existing MO
-                            mo = mfg_order.search([("name", "=", elem.get("owner"))])
-                        if mo:
+                            mo_id = int(elem.get("owner").rsplit(" - ", 1)[1])
+                            wo_id = int(elem.get("reference").rsplit(" - ", 1)[1])
                             wo = mfg_workorder.search(
                                 [
                                     (
-                                        "production_id",
+                                        "id",
                                         "=",
-                                        mo.id,
-                                    ),
-                                    (
-                                        "operation_id",
-                                        "=",
-                                        int(elem.get("operation").rsplit(" ", 1)[1]),
+                                        wo_id,
                                     ),
                                 ]
                             )
+                        if wo and wo.state == "pending" and wo.production_id.id == mo_id:
                             wo.write(
                                 {
                                     "date_planned_start": elem.get("start"),

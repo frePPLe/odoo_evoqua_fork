@@ -16,7 +16,7 @@ from django.utils.translation import gettext_lazy as _
 
 from freppledb.input.models import ManufacturingOrder, DistributionOrder, PurchaseOrder
 
-from freppledb.odoo.management.commands import Command as StdCommand
+from freppledb.odoo.management.commands.odoo_export import Command as StdCommand
 
 
 class Command(StdCommand):

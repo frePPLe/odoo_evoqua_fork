@@ -467,7 +467,7 @@ class exporter(object):
                         "1" if j["attendance"] else "0",
                         (2 ** ((int(j["dayofweek"]) + 1) % 7))
                         if "dayofweek" in j
-                        else (2 ** 7) - 1,
+                        else (2**7) - 1,
                         priority_attendance if j["attendance"] else priority_leave,
                         # In odoo, monday = 0. In frePPLe, sunday = 0.
                         ("PT%dM" % round(j["hour_from"] * 60))
@@ -736,6 +736,7 @@ class exporter(object):
                 "list_price",
                 "uom_id",
                 "categ_id",
+                "msa_design_id",  # Custom Evoqua field
             ],
         ):
             self.product_templates[i["id"]] = i
@@ -772,7 +773,7 @@ class exporter(object):
                 continue
             tmpl = self.product_templates[i["product_tmpl_id"][0]]
             if i["code"]:
-                name = (u"[%s] %s" % (i["code"], i["name"]))[:300]
+                name = ("[%s] %s" % (i["code"], i["name"]))[:300]
             else:
                 name = i["name"][:300]
             prod_obj = {"name": name, "template": i["product_tmpl_id"][0]}
@@ -794,7 +795,9 @@ class exporter(object):
                         else "",
                         tmpl["categ_id"][1],
                     )
-                ),
+                )
+                if tmpl["categ_id"]
+                else '""',
                 self.uom_categories[self.uom[tmpl["uom_id"][0]]["category"]],
                 i["id"],
             )
@@ -964,13 +967,13 @@ class exporter(object):
             for subcontractor in subcontractors:
                 # Build operation. The operation can either be a summary operation or a detailed
                 # routing.
-                operation = u"%s @ %s %d" % (
+                operation = "%s @ %s %d" % (
                     product_buf["name"],
                     subcontractor.get("name", location),
                     i["id"],
                 )
                 if len(operation) > 300:
-                    suffix = u" @ %s %d" % (
+                    suffix = " @ %s %d" % (
                         subcontractor.get("name", location),
                         i["id"],
                     )
@@ -1186,7 +1189,6 @@ class exporter(object):
                                         if not first:
                                             # Only first suboperation needs to consume material
                                             new_oper["consume_material"] = False
-                                        new_oper["layer"] = layer + 1
                                         steplist.append(new_oper)
                                         first = False
                         else:
@@ -1209,7 +1211,9 @@ class exporter(object):
                         duration = max(
                             step["msa_time_start"] + step["msa_time_stop"], 0
                         )
-                        duration_per = max(step["msa_time_cycle"], 0) * step["msa_cycle_nbr"]
+                        duration_per = (
+                            max(step["msa_time_cycle"], 0) * step["msa_cycle_nbr"]
+                        )
                         batch = max(
                             step["msa_capacity_per_cycle"]
                             * step["msa_resources_per_cycle"],
@@ -1352,7 +1356,7 @@ class exporter(object):
         yield "<demands>\n"
 
         for i in so_line:
-            name = u"%s %d" % (i["order_id"][1], i["id"])
+            name = "%s %d" % (i["order_id"][1], i["id"])
             batch = i["order_id"][1]
             product = self.product_product.get(i["product_id"][0], None)
             j = so[i["order_id"][0]]
@@ -1697,7 +1701,7 @@ class exporter(object):
                 )
                 if not item or not location:
                     continue
-                operation = u"%s @ %s %d" % (
+                operation = "%s @ %s %d" % (
                     item["name"],
                     location,
                     i["bom_id"][0],
@@ -1751,6 +1755,7 @@ class exporter(object):
                             "msa_sub_sequence",  # Evoqua custom field
                             "msa_sub_workorder_ids",  # Evoqua custom field
                         ],
+                        order="msa_sequence asc",
                     ):
                         if wo["msa_sub_workorder_ids"]:
                             # Has sub-workorders
@@ -1768,6 +1773,7 @@ class exporter(object):
                                     "msa_sequence",  # Evoqua custom field
                                     "msa_sub_sequence",  # Evoqua custom field
                                 ],
+                                order="msa_sequence asc",
                             ):
                                 try:
                                     name = self.suboperations[operation][wo_counter - 1]
@@ -1797,8 +1803,8 @@ class exporter(object):
                                 )
                                 yield '<operationplan type="MO" reference=%s%s quantity="%s" quantity_completed="%s" status="%s"><operation name=%s/><owner reference=%s/></operationplan>\n' % (
                                     quoteattr(
-                                        "%s - %03d - %s"
-                                        % (i["name"], wo_counter, subwo["id"])
+                                        "%s - %s - %03d - %s"
+                                        % (i["name"], i["id"], wo_counter, subwo["id"])
                                     ),
                                     startdate,
                                     qty,
@@ -1897,7 +1903,7 @@ class exporter(object):
                 i["product_uom"][0],
                 self.product_product[i["product_id"][0]]["template"],
             )
-            name = u"%s @ %s" % (item["name"], i["warehouse_id"][1])
+            name = "%s @ %s" % (item["name"], i["warehouse_id"][1])
             yield "<buffer name=%s><item name=%s/><location name=%s/>\n" '%s%s%s<booleanproperty name="ip_flag" value="true"/>\n' '<stringproperty name="roq_type" value="quantity"/>\n<stringproperty name="ss_type" value="quantity"/>\n' "</buffer>\n" % (
                 quoteattr(name),
                 quoteattr(item["name"]),
