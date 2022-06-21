@@ -46,26 +46,26 @@ class importer(object):
         proc_orderline = self.env["purchase.order.line"]
         mfg_order = self.env["mrp.production"]
         mfg_workorder = self.env["mrp.workorder"]
-        if self.mode == 1:
-            # Cancel previous draft purchase quotations
-            m = self.env["purchase.order"]
-            recs = m.search([("state", "=", "draft"), ("origin", "=", "frePPLe")])
-            recs.write({"state": "cancel"})
-            recs.unlink()
-            msg.append("Removed %s old draft purchase orders" % len(recs))
+        # if self.mode == 1:
+        #     # Cancel previous draft purchase quotations
+        #     m = self.env["purchase.order"]
+        #     recs = m.search([("state", "=", "draft"), ("origin", "=", "frePPLe")])
+        #     recs.write({"state": "cancel"})
+        #     recs.unlink()
+        #     msg.append("Removed %s old draft purchase orders" % len(recs))
 
-            # Cancel previous draft manufacturing orders
-            recs = mfg_order.search(
-                [
-                    "|",
-                    ("state", "=", "draft"),
-                    ("state", "=", "cancel"),
-                    ("origin", "=", "frePPLe"),
-                ]
-            )
-            recs.write({"state": "cancel"})
-            recs.unlink()
-            msg.append("Removed %s old draft manufacturing orders" % len(recs))
+        #     # Cancel previous draft manufacturing orders
+        #     recs = mfg_order.search(
+        #         [
+        #             "|",
+        #             ("state", "=", "draft"),
+        #             ("state", "=", "cancel"),
+        #             ("origin", "=", "frePPLe"),
+        #         ]
+        #     )
+        #     recs.write({"state": "cancel"})
+        #     recs.unlink()
+        #     msg.append("Removed %s old draft manufacturing orders" % len(recs))
 
         # Parsing the XML data file
         countproc = 0
@@ -180,9 +180,12 @@ class importer(object):
                             # Existing MO
                             try:
                                 mo_id = int(elem.get("owner").rsplit(" - ", 1)[1])
+                            except IndexError:
+                                raise Exception("Can't recognize MO id")
+                            try:
                                 wo_id = int(elem.get("reference").rsplit(" - ", 1)[1])
                             except IndexError:
-                                raise Exception("Can't recognize MO or WO id")
+                                raise Exception("Can't recognize WO id")
                             wo = mfg_workorder.search(
                                 [
                                     (
