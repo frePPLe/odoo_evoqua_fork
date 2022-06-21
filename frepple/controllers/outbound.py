@@ -683,7 +683,7 @@ class exporter(object):
                 or name == "Painting & Oven per sqm 涂层 & 电炉每平方米面积"  # TEMPORARY HARDCODE
                 else "",
                 i["capacity"],
-                100,  # i["time_efficiency"],    TEMPORARY WORKAROUND FOR ODOO TEST DATA ISSUE
+                i["time_efficiency"],
                 quoteattr(self.mfg_location),
                 ("<owner name=%s/>" % quoteattr(owner[1])) if owner else "",
                 ("<available name=%s/>" % quoteattr(available[1])) if available else "",
