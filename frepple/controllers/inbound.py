@@ -166,20 +166,23 @@ class importer(object):
                             for w in mfg_workorder.browse(mo.workorder_ids):
                                 if w.msa_sub_workorder_ids:
                                     for subw in mfg_workorder.browse(w.msa_sub_workorder_ids):
-                                        if count == wo_idx:
-                                            wo = w
+                                        if wo_count == wo_idx:
+                                            wo = subw
                                             break
-                                        wo_idx += 1
+                                        wo_count += 1
                                 else:
-                                    if count == wo_idx:
+                                    if wo_count == wo_idx:
                                         wo = w
-                                    wo_idx += 1
+                                    wo_count += 1
                                 if wo:
                                     break
                         else:
                             # Existing MO
-                            mo_id = int(elem.get("owner").rsplit(" - ", 1)[1])
-                            wo_id = int(elem.get("reference").rsplit(" - ", 1)[1])
+                            try:
+                                mo_id = int(elem.get("owner").rsplit(" - ", 1)[1])
+                                wo_id = int(elem.get("reference").rsplit(" - ", 1)[1])
+                            except IndexError:
+                                raise Exception("Can't recognize MO or WO id")
                             wo = mfg_workorder.search(
                                 [
                                     (
