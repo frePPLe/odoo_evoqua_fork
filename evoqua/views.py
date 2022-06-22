@@ -206,7 +206,7 @@ class OverviewDemandProgressReport(GridPivot):
                         "enddate": row[11].date(),
                         "cycles": int(row[12]),
                         "duration": row[13],
-                        "demands": json.loads(row[14]) if row[14] else {},
+                        "demands": json.loads(row[14]) if row[14] else [],
                     }
 class PathReport(stdPathReport):
     @classmethod
