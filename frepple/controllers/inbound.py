@@ -46,6 +46,7 @@ class importer(object):
         proc_orderline = self.env["purchase.order.line"]
         mfg_order = self.env["mrp.production"]
         mfg_workorder = self.env["mrp.workorder"]
+        stck_picking_type = self.env["stock.picking.type"]
         # if self.mode == 1:
         #     # Cancel previous draft purchase quotations
         #     m = self.env["purchase.order"]
@@ -160,12 +161,14 @@ class importer(object):
                         if elem.get("owner") in mo_references:
                             # Newly created MO
                             mo = mo_references[elem.get("owner")]
-                            wo_idx = int(elem.get("operation").rsplit(" - ",1)[1]) - 1
+                            wo_idx = int(elem.get("operation").rsplit(" - ", 1)[1]) - 1
                             wo_count = 0
                             wo = None
                             for w in mfg_workorder.browse(mo.workorder_ids):
                                 if w.msa_sub_workorder_ids:
-                                    for subw in mfg_workorder.browse(w.msa_sub_workorder_ids):
+                                    for subw in mfg_workorder.browse(
+                                        w.msa_sub_workorder_ids
+                                    ):
                                         if wo_count == wo_idx:
                                             wo = subw
                                             break
@@ -195,7 +198,11 @@ class importer(object):
                                     ),
                                 ]
                             )
-                        if wo and wo.state == "pending" and wo.production_id.id == mo_id:
+                        if (
+                            wo
+                            and wo.state == "pending"
+                            and wo.production_id.id == mo_id
+                        ):
                             wo.write(
                                 {
                                     "date_planned_start": elem.get("start"),
@@ -204,6 +211,15 @@ class importer(object):
                             )
                     else:
                         # Create manufacturing order
+                        warehouse = int(elem.get("location_id"))
+                        picking = stck_picking_type.search(
+                            [
+                                ("code", "=", "mrp_operation"),
+                                ("company_id", "=", self.company.id),
+                                ("warehouse_id", "=", warehouse),
+                            ],
+                            limit=1,
+                        )
                         mo = mfg_order.create(
                             {
                                 "product_qty": elem.get("quantity"),
@@ -212,8 +228,9 @@ class importer(object):
                                 "product_id": int(item_id),
                                 "company_id": self.company.id,
                                 "product_uom_id": int(uom_id),
-                                "location_src_id": int(elem.get("location_id")),
-                                "location_dest_id": int(elem.get("location_id")),
+                                "picking_type_id": picking.id,
+                                "location_src_id": warehouse,
+                                "location_dest_id": warehouse,
                                 "bom_id": int(elem.get("operation").rsplit(" ", 1)[1]),
                                 "qty_producing": 0.00,
                                 # TODO no place to store the criticality
