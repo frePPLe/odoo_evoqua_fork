@@ -6,14 +6,18 @@
 # reuse the code for other implementations.
 #
 
+import os
 import setuptools
+
+with open(os.path.join(os.path.dirname(__file__), "__init__.py")) as initfile:
+    exec(initfile.read(), globals())
 
 setuptools.setup(
     name="evoqua",
     description="frePPLe extension module for Evoqua",
     author="frepple.com",
     author_email="jdetaeye@frepple.com",
-    version="1.0",
+    version=__version__,
     packages=["evoqua", ],
     package_dir={"evoqua": "."},
     package_data={
