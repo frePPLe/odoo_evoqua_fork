@@ -36,3 +36,19 @@ class CheckBuckets(PlanTask):
                 where type = 'buckets'
                 """
             )
+
+@PlanTaskRegistry.register
+class HardRoutingDelay(PlanTask):
+    description = "Evoqua make"
+    sequence = 96.5   # Right after loading operations
+
+    @classmethod
+    def getWeight(cls, **kwargs):
+        return 0.1
+
+    @classmethod
+    def run(cls, database=DEFAULT_DB_ALIAS, **kwargs):
+        import frepple
+        for o in frepple.operations():
+            if isinstance(o, frepple.operation_routing):
+                o.hard_posttime = True
