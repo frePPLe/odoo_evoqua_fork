@@ -15,7 +15,7 @@ from freppledb.common.commands import PlanTaskRegistry, PlanTask
 @PlanTaskRegistry.register
 class CheckBuckets(PlanTask):
     description = "Evoqua resource type conversion"
-    sequence = 107.6
+    sequence = 309
 
     @classmethod
     def getWeight(cls, **kwargs):

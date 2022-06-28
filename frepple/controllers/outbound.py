@@ -683,7 +683,6 @@ class exporter(object):
                 quoteattr(name),
                 ' xsi:type="resource_buckets"'  # Evoqua customization to set resource type
                 if i["msa_costing_type"] == "machine"
-                or name == "Painting & Oven per sqm 涂层 & 电炉每平方米面积"  # TEMPORARY HARDCODE
                 else "",
                 i["capacity"],
                 i["time_efficiency"],
