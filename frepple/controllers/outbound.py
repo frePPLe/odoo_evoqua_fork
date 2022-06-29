@@ -941,6 +941,7 @@ class exporter(object):
                 "product_tmpl_id",
                 "type",
                 "bom_line_ids",
+                "sequence",
             ],
         ):
             # Determine the location
@@ -1011,12 +1012,13 @@ class exporter(object):
                             ]
                             / 1440.0
                         )
-                        yield '<operation name=%s size_multiple="1" duration_per="%s" posttime="P%dD" xsi:type="operation_time_per">\n' "<item name=%s/><location name=%s/>\n" % (
+                        yield '<operation name=%s size_multiple="1" duration_per="%s" posttime="P%dD" priority="%s" xsi:type="operation_time_per">\n' "<item name=%s/><location name=%s/>\n" % (
                             quoteattr(operation),
                             self.convert_float_time(duration_per)
                             if duration_per and duration_per > 0
                             else "P0D",
                             self.manufacturing_lead,
+                            i["sequence"] or 1,
                             quoteattr(product_buf["name"]),
                             quoteattr(location),
                         )
@@ -1127,9 +1129,10 @@ class exporter(object):
                     # CASE 2: A routing operation is created with a suboperation for each
                     # routing step.
                     #
-                    yield '<operation name=%s size_multiple="1" posttime="P%dD" xsi:type="operation_routing">' "<item name=%s/><location name=%s/>\n" % (
+                    yield '<operation name=%s size_multiple="1" posttime="P%dD" priority="%s" xsi:type="operation_routing">' "<item name=%s/><location name=%s/>\n" % (
                         quoteattr(operation),
                         self.manufacturing_lead,
+                        i["sequence"] or 1,
                         quoteattr(product_buf["name"]),
                         quoteattr(location),
                     )
