@@ -53,9 +53,12 @@ class OverviewDemandProgressReport(GridPivot):
                 .filter(owner=OuterRef("reference"))
                 .filter(
                     Exists(
-                        OperationResource.objects.filter(resource__name__in=["oven","Painting & Oven per sqm 涂层 & 电炉每平方米面积"]).filter(
-                            operation__name=OuterRef("operation")
-                        )
+                        OperationResource.objects.filter(
+                            resource__name__in=[
+                                "oven",
+                                "Painting & Oven per sqm 涂层 & 电炉每平方米面积",
+                            ]
+                        ).filter(operation__name=OuterRef("operation"))
                     )
                 )
             )
@@ -130,6 +133,15 @@ class OverviewDemandProgressReport(GridPivot):
 
         # Execute the query
         query = """
+            with interruptions as (
+                select owner_id as reference,
+                to_timestamp(jsonb_array_elements(plan->'interruptions')->>0, 'YYYY-MM-DD HH24:MI:SS') startdate,
+                to_timestamp(jsonb_array_elements(plan->'interruptions')->>1, 'YYYY-MM-DD HH24:MI:SS') enddate
+                from operationplan where type = 'MO' and owner_id is not null
+                and status not in ('closed', 'completed', 'canceled')
+                and exists (select 1 from operationresource where resource_id in ('oven', 'Painting & Oven per sqm 涂层 & 电炉每平方米面积')
+                        and operation_id = operationplan.operation_id)
+            )
             select
             operationplan.reference,
             item.name item,
@@ -143,8 +155,23 @@ class OverviewDemandProgressReport(GridPivot):
             d.bucket,
             d.startdate,
             d.enddate,
-            sum(case when (workorder.startdate, workorder.enddate) overlaps (d.startdate, d.enddate) then 1 else 0 end),
-            round(extract(epoch from sum(greatest(interval '0 day', least(d.enddate,workorder.enddate)-greatest(d.startdate,workorder.startdate)))) / 60),
+            (select count(*) from operationplan workorder
+            where (workorder.startdate, workorder.enddate) overlaps (d.startdate,d.enddate)
+            and workorder.status not in ('closed', 'completed', 'canceled')
+            and workorder.owner_id = operationplan.reference
+            and exists (select 1 from operationresource where operation_id = workorder.operation_id
+            and resource_id in ('oven', 'Painting & Oven per sqm 涂层 & 电炉每平方米面积'))),
+            (select round(extract(epoch from sum(greatest(interval '0 second', least(d.enddate, workorder.enddate)
+            - greatest(d.startdate, workorder.startdate)))) / 60) from operationplan workorder
+            where (workorder.startdate, workorder.enddate) overlaps (d.startdate,d.enddate)
+            and workorder.status not in ('closed', 'completed', 'canceled')
+            and workorder.owner_id = operationplan.reference
+            and exists (select 1 from operationresource where operation_id = workorder.operation_id
+            and resource_id in ('oven', 'Painting & Oven per sqm 涂层 & 电炉每平方米面积'))) as duration,
+            (select round(extract(epoch from sum(greatest(interval '0 second', least(d.enddate, interruptions.enddate)
+            - greatest(d.startdate, interruptions.startdate)))) / 60) from interruptions
+            where (interruptions.startdate, interruptions.enddate) overlaps (d.startdate,d.enddate)
+            and interruptions.reference = operationplan.reference) as interruptions,
             cast(operationplan.demands as text)
             from
             (%s) operationplan
@@ -153,10 +180,6 @@ class OverviewDemandProgressReport(GridPivot):
                        select name as bucket, startdate, enddate
                        from common_bucketdetail
                        where bucket_id = %%s and enddate > %%s and startdate < %%s) d
-            inner join operationplan workorder on operationplan.reference = workorder.owner_id
-			inner join operationresource on workorder.operation_id = operationresource.operation_id
-										and operationresource.resource_id in ('oven', 'Painting & Oven per sqm 涂层 & 电炉每平方米面积')
-										and workorder.status not in ('closed', 'completed', 'canceled')
             group by
             operationplan.reference,
             item.name,
@@ -205,9 +228,11 @@ class OverviewDemandProgressReport(GridPivot):
                         "startdate": row[10].date(),
                         "enddate": row[11].date(),
                         "cycles": int(row[12]),
-                        "duration": row[13],
-                        "demands": json.loads(row[14]) if row[14] else [],
+                        "duration": (row[13] or 0) - (row[14] or 0),
+                        "demands": json.loads(row[15]) if row[15] else [],
                     }
+
+
 class PathReport(stdPathReport):
     @classmethod
     def getOperationFromBuffer(
@@ -454,21 +479,39 @@ class PathReport(stdPathReport):
                 i, request, depth, downstream, previousOperation, bom_quantity
             ):
                 yield j
+
+
 class UpstreamItemPath(stdUpstreamItemPath, PathReport):
     pass
+
+
 class DownstreamItemPath(stdDownstreamItemPath, PathReport):
     pass
+
+
 class UpstreamBufferPath(stdUpstreamBufferPath, PathReport):
     pass
+
+
 class DownstreamBufferPath(stdDownstreamBufferPath, PathReport):
     pass
+
+
 class UpstreamResourcePath(stdUpstreamResourcePath, PathReport):
     pass
+
+
 class UpstreamDemandPath(stdUpstreamDemandPath, PathReport):
     pass
+
+
 class DownstreamResourcePath(stdDownstreamResourcePath, PathReport):
     pass
+
+
 class UpstreamOperationPath(stdUpstreamOperationPath, PathReport):
     pass
+
+
 class DownstreamOperationPath(stdDownstreamOperationPath, PathReport):
     pass
