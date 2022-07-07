@@ -470,7 +470,7 @@ class exporter(object):
                         "1" if j["attendance"] else "0",
                         (2 ** ((int(j["dayofweek"]) + 1) % 7))
                         if "dayofweek" in j
-                        else (2**7) - 1,
+                        else (2 ** 7) - 1,
                         priority_attendance if j["attendance"] else priority_leave,
                         # In odoo, monday = 0. In frePPLe, sunday = 0.
                         ("PT%dM" % round(j["hour_from"] * 60))
@@ -1336,6 +1336,8 @@ class exporter(object):
                 "product_uom_qty",
                 "product_uom",
                 "order_id",
+                "msa_req_delivery_date",
+                "msa_confirmed_ship_date",
             ],
         )
 
@@ -1383,8 +1385,18 @@ class exporter(object):
             if not customer or not location or not product:
                 # Not interested in this sales order...
                 continue
+            confirmed_line_date = (
+                datetime.combine(i["msa_confirmed_ship_date"], datetime.min.time())
+                if i["msa_confirmed_ship_date"]
+                else None
+            )
+            requested_line_date = (
+                datetime.combine(i["msa_req_delivery_date"], datetime.min.time())
+                if i["msa_req_delivery_date"]
+                else None
+            )
             due = self.formatDateTime(
-                j.get("commitment_date", False) or j["date_order"]
+                confirmed_line_date or requested_line_date or j["date_order"]
             )
             priority = 1  # We give all customer orders the same default priority
 
@@ -1430,12 +1442,10 @@ class exporter(object):
                 "revised",
             ):  # Evoqua customization with some custom states
                 status = "canceled"
-                qty = (
-                    self.convert_qty_uom(
-                        i["product_uom_qty"],
-                        i["product_uom"],
-                        self.product_product[i["product_id"][0]]["template"],
-                    )
+                qty = self.convert_qty_uom(
+                    i["product_uom_qty"],
+                    i["product_uom"],
+                    self.product_product[i["product_id"][0]]["template"],
                 )
             else:
                 logger.warning("Unknown sales order state: %s." % (state,))
@@ -1486,7 +1496,7 @@ class exporter(object):
                 priority,
                 # Standard code looks at picking_policy:
                 # j["picking_policy"] == "one" and qty or 0.0,
-                qty, # Evoqua custom to always ship in full
+                qty,  # Evoqua custom to always ship in full
                 status,
                 quoteattr(product["name"]),
                 quoteattr(customer),
