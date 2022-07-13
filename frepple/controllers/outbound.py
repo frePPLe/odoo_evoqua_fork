@@ -950,7 +950,7 @@ class exporter(object):
 
             # Determine operation name and item
             product_template = (
-                self.product_templates.get([i["product_tmpl_id"][0]], None)
+                self.product_templates.get(i["product_tmpl_id"][0], None)
                 if i["product_tmpl_id"]
                 else None
             )
