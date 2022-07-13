@@ -950,10 +950,12 @@ class exporter(object):
 
             # Determine operation name and item
             product_template = (
-                self.product_templates[i["product_tmpl_id"][0]]
+                self.product_templates.get([i["product_tmpl_id"][0]], None)
                 if i["product_tmpl_id"]
                 else None
             )
+            if not product_template:
+                continue
             product_buf = self.product_template_product.get(
                 i["product_tmpl_id"][0], None
             )  # TODO avoid multiple bom on single template
