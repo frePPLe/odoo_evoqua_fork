@@ -309,17 +309,9 @@ class exporter(object):
             fields=["factor", "uom_type", "category_id", "name"],
         ):
             if i["uom_type"] == "reference":
-                f = 1.0
                 self.uom_categories[i["category_id"][0]] = i["id"]
-            elif i["uom_type"] == "bigger":
-                f = i["factor"]
-            else:
-                if i["factor"] > 0:
-                    f = 1 / i["factor"]
-                else:
-                    f = 1.0
             self.uom[i["id"]] = {
-                "factor": f,
+                "factor": i["factor"],
                 "category": i["category_id"][0],
                 "name": i["name"],
             }
